@@ -112,11 +112,12 @@
     height: 28px;
     border: none;
     border-radius: 50%;
-    background: rgba(255,255,255,.95);
+    background: rgba(255, 255, 255, 0.95);
     color: #000;
     cursor: pointer;
     font-size: 20px;
     line-height: 1;
+    z-index: 2;
   }
 
   #{{ section_id }} .gift-modal[hidden] {
@@ -132,7 +133,7 @@
   #{{ section_id }} .gift-modal__overlay {
     position: absolute;
     inset: 0;
-    background: rgba(0,0,0,.28);
+    background: rgba(0, 0, 0, 0.28);
   }
 
   #{{ section_id }} .gift-modal__dialog {
@@ -143,7 +144,7 @@
     width: min(92vw, 430px);
     background: #fff;
     padding: 18px;
-    box-shadow: 0 20px 50px rgba(0,0,0,.18);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
   }
 
   #{{ section_id }} .gift-modal__close {
@@ -229,8 +230,13 @@
     color: #fff;
     font-size: 13px;
     font-weight: 700;
-    letter-spacing: .05em;
+    letter-spacing: 0.05em;
     cursor: pointer;
+  }
+
+  #{{ section_id }} .gift-modal__add:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   #{{ section_id }} .gift-modal__status {
@@ -251,6 +257,8 @@
       max-width: 140px;
     }
   }
+</style>
+
 <script>
   (() => {
     const root = document.getElementById('{{ section_id }}');
@@ -268,14 +276,14 @@
     let activeProduct = null;
     let selectedOptions = {};
 
-    function formatMoney(cents) {
+    const formatMoney = (cents) => {
       return new Intl.NumberFormat('en-CA', {
         style: 'currency',
         currency: '{{ cart.currency.iso_code | default: shop.currency }}'
       }).format((Number(cents) || 0) / 100);
-    }
+    };
 
-    function getUniqueOptionValues(product, optionIndex) {
+    const getUniqueOptionValues = (product, optionIndex) => {
       return [
         ...new Set(
           (product.variants || [])
@@ -283,21 +291,26 @@
             .filter(Boolean)
         )
       ];
-    }
+    };
 
-    function findSelectedVariant(product) {
+    const findSelectedVariant = (product) => {
       if (!product || !product.variants || !product.options) return null;
 
       return (
         product.variants.find((variant) => {
-          return product.options.every((optionName, index) => {
+          return product.options.every((optionEntry, index) => {
+            const optionName =
+              typeof optionEntry === 'string'
+                ? optionEntry
+                : optionEntry?.name || `Option ${index + 1}`;
+
             return selectedOptions[optionName] === variant.options?.[index];
           });
         }) || null
       );
-    }
+    };
 
-    function updateVariantState() {
+    const updateVariantState = () => {
       if (!activeProduct) return;
 
       const variant = findSelectedVariant(activeProduct);
@@ -310,14 +323,23 @@
 
       modalPrice.textContent = formatMoney(variant.price);
       addButton.disabled = !variant.available;
-    }
+    };
 
-    function renderOptions(product) {
+    const renderOptions = (product) => {
       modalOptions.innerHTML = '';
       selectedOptions = {};
 
-      (product.options || []).forEach((optionName, optionIndex) => {
-        const values = getUniqueOptionValues(product, optionIndex);
+      (product.options || []).forEach((optionEntry, optionIndex) => {
+        const optionName =
+          typeof optionEntry === 'string'
+            ? optionEntry
+            : optionEntry?.name || `Option ${optionIndex + 1}`;
+
+        const values =
+          Array.isArray(optionEntry?.values) && optionEntry.values.length
+            ? optionEntry.values
+            : getUniqueOptionValues(product, optionIndex);
+
         selectedOptions[optionName] = values[0] || '';
 
         const group = document.createElement('div');
@@ -328,7 +350,7 @@
         label.textContent = optionName;
         group.appendChild(label);
 
-        if (optionName.toLowerCase() === 'size') {
+        if (String(optionName).toLowerCase() === 'size') {
           const select = document.createElement('select');
           select.className = 'gift-modal__select';
 
@@ -354,14 +376,16 @@
           values.forEach((value, index) => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'gift-modal__swatch' + (index === 0 ? ' is-active' : '');
+            button.className = `gift-modal__swatch${index === 0 ? ' is-active' : ''}`;
             button.textContent = value;
 
             button.addEventListener('click', () => {
               selectedOptions[optionName] = value;
+
               wrap.querySelectorAll('.gift-modal__swatch').forEach((swatch) => {
                 swatch.classList.remove('is-active');
               });
+
               button.classList.add('is-active');
               updateVariantState();
             });
@@ -374,9 +398,9 @@
 
         modalOptions.appendChild(group);
       });
-    }
+    };
 
-    function openModal(product) {
+    const openModal = (product) => {
       activeProduct = product;
 
       const featuredImage =
@@ -397,19 +421,19 @@
       statusBox.textContent = '';
       modal.hidden = false;
       document.body.classList.add('overflow-hidden');
-    }
+    };
 
-    function closeModal() {
+    const closeModal = () => {
       modal.hidden = true;
       document.body.classList.remove('overflow-hidden');
-    }
+    };
 
-    async function addItems(items) {
-      const response = await fetch(`${window.location.origin}/cart/add.js`, {
+    const addItems = async (items) => {
+      const response = await fetch('/cart/add.js', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json'
         },
         credentials: 'same-origin',
         body: JSON.stringify({ items })
@@ -417,57 +441,50 @@
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Cart add error:', errorText);
-        throw new Error('Add to cart failed');
+        throw new Error(errorText || 'Add to cart failed');
       }
 
       return response.json();
-    }
+    };
 
-    async function getBonusVariantId() {
+    const getBonusVariantId = async () => {
       const handle = '{{ section.settings.soft_winter_jacket.handle }}';
       if (!handle) return null;
 
+      const response = await fetch(`/products/${handle}.js`, {
+        credentials: 'same-origin'
+      });
+
+      if (!response.ok) return null;
+
+      const product = await response.json();
+      const firstAvailable = (product.variants || []).find((variant) => variant.available);
+      return firstAvailable?.id || null;
+    };
+
+    root.addEventListener('click', async (event) => {
+      const trigger = event.target.closest('.gift-grid__trigger');
+      if (!trigger || !root.contains(trigger)) return;
+
+      const item = trigger.closest('.gift-grid__item');
+      if (!item) return;
+
+      const handle = item.getAttribute('data-product-handle');
+      if (!handle) return;
+
       try {
-        const productUrl = `${window.location.origin}/products/${handle}.js`;
-        const response = await fetch(productUrl, {
-          method: 'GET',
+        const response = await fetch(`/products/${handle}.js`, {
           credentials: 'same-origin'
         });
 
-        if (!response.ok) return null;
+        if (!response.ok) throw new Error('Failed to load product');
 
         const product = await response.json();
-        return product?.variants?.[0]?.id || null;
+        openModal(product);
       } catch (error) {
-        console.error('Bonus product load error:', error);
-        return null;
+        statusBox.textContent = 'Could not load product details.';
+        console.error(error);
       }
-    }
-
-    root.querySelectorAll('.gift-grid__item').forEach((item) => {
-      const trigger = item.querySelector('.gift-grid__trigger');
-      if (!trigger) return;
-
-      trigger.addEventListener('click', async () => {
-        const handle = item.getAttribute('data-product-handle');
-        if (!handle) return;
-
-        try {
-          const productUrl = `${window.location.origin}/products/${handle}.js`;
-          const response = await fetch(productUrl, {
-            method: 'GET',
-            credentials: 'same-origin'
-          });
-
-          if (!response.ok) throw new Error('Failed to load product');
-
-          const product = await response.json();
-          openModal(product);
-        } catch (error) {
-          console.error('Popup product load error:', error);
-        }
-      });
     });
 
     root.querySelectorAll('[data-close-modal]').forEach((button) => {
@@ -478,11 +495,6 @@
       if (!activeProduct) return;
 
       const selectedVariant = findSelectedVariant(activeProduct);
-
-      console.log('Active product:', activeProduct);
-      console.log('Selected options:', selectedOptions);
-      console.log('Selected variant:', selectedVariant);
-
       if (!selectedVariant || !selectedVariant.id) {
         statusBox.textContent = 'Please choose valid options.';
         return;
@@ -490,7 +502,6 @@
 
       try {
         const items = [{ id: selectedVariant.id, quantity: 1 }];
-
         const color = (selectedVariant.options?.[0] || '').toLowerCase();
         const size = (selectedVariant.options?.[1] || '').toLowerCase();
 
@@ -504,8 +515,13 @@
         await addItems(items);
         statusBox.textContent = 'Added to cart.';
       } catch (error) {
-        console.error('Add to cart error:', error);
-        statusBox.textContent = 'Could not add to cart. Please try again.';
+        try {
+          await addItems([{ id: selectedVariant.id, quantity: 1 }]);
+          statusBox.textContent = 'Added to cart.';
+        } catch (fallbackError) {
+          statusBox.textContent = 'Could not add to cart. Please try again.';
+          console.error(error, fallbackError);
+        }
       }
     });
 
