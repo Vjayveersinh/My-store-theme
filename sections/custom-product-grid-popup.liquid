@@ -448,19 +448,33 @@
     };
 
     const getBonusVariantId = async () => {
-      const handle = '{{ section.settings.soft_winter_jacket.handle }}';
-      if (!handle) return null;
+  const handle = 'dark-winter-jacket';
 
-      const response = await fetch(`/products/${handle}.js`, {
-        credentials: 'same-origin'
-      });
+  console.log('BONUS HANDLE:', handle);
 
-      if (!response.ok) return null;
+  const response = await fetch(`/products/${handle}.js`, {
+    credentials: 'same-origin'
+  });
 
-      const product = await response.json();
-      const firstAvailable = (product.variants || []).find((variant) => variant.available);
-      return firstAvailable?.id || null;
-    };
+  console.log('BONUS FETCH STATUS:', response.status);
+
+  if (!response.ok) {
+    console.warn(`Bonus product handle "${handle}" was not found.`);
+    return null;
+  }
+
+  const product = await response.json();
+  console.log('BONUS PRODUCT:', product);
+
+  const firstAvailable = (product.variants || []).find((variant) => variant.available);
+
+  if (!firstAvailable) {
+    console.warn('Dark Winter Jacket has no available variants.');
+    return null;
+  }
+
+  return firstAvailable.id;
+};
 
     root.addEventListener('click', async (event) => {
       const trigger = event.target.closest('.gift-grid__trigger');
@@ -491,39 +505,66 @@
       button.addEventListener('click', closeModal);
     });
 
-    addButton.addEventListener('click', async () => {
-      if (!activeProduct) return;
+  addButton.addEventListener('click', async () => {
+  if (!activeProduct) return;
 
-      const selectedVariant = findSelectedVariant(activeProduct);
-      if (!selectedVariant || !selectedVariant.id) {
-        statusBox.textContent = 'Please choose valid options.';
-        return;
-      }
+  const selectedVariant = findSelectedVariant(activeProduct);
+  if (!selectedVariant || !selectedVariant.id) {
+    statusBox.textContent = 'Please choose valid options.';
+    return;
+  }
 
-      try {
-        const items = [{ id: selectedVariant.id, quantity: 1 }];
-        const color = (selectedVariant.options?.[0] || '').toLowerCase();
-        const size = (selectedVariant.options?.[1] || '').toLowerCase();
+  try {
+    const items = [{ id: selectedVariant.id, quantity: 1 }];
 
-        if (color === 'black' && size === 'medium') {
-          const bonusVariantId = await getBonusVariantId();
-          if (bonusVariantId) {
-            items.push({ id: bonusVariantId, quantity: 1 });
-          }
-        }
+    const optionMap = {};
 
-        await addItems(items);
-        statusBox.textContent = 'Added to cart.';
-      } catch (error) {
-        try {
-          await addItems([{ id: selectedVariant.id, quantity: 1 }]);
-          statusBox.textContent = 'Added to cart.';
-        } catch (fallbackError) {
-          statusBox.textContent = 'Could not add to cart. Please try again.';
-          console.error(error, fallbackError);
-        }
-      }
+    (activeProduct.options || []).forEach((optionEntry, index) => {
+      const optionName =
+        typeof optionEntry === 'string'
+          ? optionEntry
+          : optionEntry?.name || `Option ${index + 1}`;
+
+      optionMap[String(optionName).toLowerCase().trim()] = String(
+        selectedVariant.options?.[index] || ''
+      ).toLowerCase().trim();
     });
+
+    const color = optionMap.color || '';
+    const size = optionMap.size || '';
+
+    const isBlack = color === 'black';
+    const isMedium = size === 'm' || size === 'medium';
+
+    if (isBlack && isMedium) {
+      const bonusVariantId = await getBonusVariantId();
+
+      if (bonusVariantId) {
+        items.push({ id: bonusVariantId, quantity: 1 });
+      } else {
+        console.warn('Soft Winter Jacket not set or no available variant found.');
+      }
+    }
+
+    await addItems(items);
+
+    if (items.length > 1) {
+      statusBox.textContent = 'Added to cart with Soft Winter Jacket.';
+    } else {
+      statusBox.textContent = 'Added to cart.';
+    }
+  } catch (error) {
+    console.error('PRIMARY ADD ERROR:', error);
+
+    try {
+      await addItems([{ id: selectedVariant.id, quantity: 1 }]);
+      statusBox.textContent = 'Added to cart.';
+    } catch (fallbackError) {
+      statusBox.textContent = 'Could not add to cart. Please try again.';
+      console.error('FALLBACK ADD ERROR:', fallbackError);
+    }
+  }
+});
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !modal.hidden) {
